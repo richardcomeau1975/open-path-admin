@@ -5,6 +5,7 @@ import { adminFetch } from "../lib/api";
 
 export default function CoursesTab() {
   const [students, setStudents] = useState([]);
+  const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState("");
@@ -14,10 +15,14 @@ export default function CoursesTab() {
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
 
-  const loadStudents = async () => {
+  const loadData = async () => {
     try {
-      const data = await adminFetch("/api/admin/students");
-      setStudents(data);
+      const [studentsData, coursesData] = await Promise.all([
+        adminFetch("/api/admin/students"),
+        adminFetch("/api/admin/courses"),
+      ]);
+      setStudents(studentsData);
+      setCourses(coursesData);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -26,7 +31,7 @@ export default function CoursesTab() {
   };
 
   useEffect(() => {
-    loadStudents();
+    loadData();
   }, []);
 
   const handleCreate = async () => {
@@ -46,6 +51,7 @@ export default function CoursesTab() {
       setCourseName("");
       setFrameworkType("");
       setShowForm(false);
+      await loadData();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -205,38 +211,39 @@ export default function CoursesTab() {
 
       {loading ? (
         <p style={{ color: "var(--text-muted)" }}>Loading...</p>
+      ) : courses.length === 0 ? (
+        <p style={{ color: "var(--text-muted)", textAlign: "center", padding: "40px" }}>
+          No courses yet.
+        </p>
       ) : (
-        <div>
-          {students.map((student) => (
-            <div
-              key={student.id}
-              style={{
-                backgroundColor: "var(--bg-card)",
-                border: "1px solid var(--border-card)",
-                borderRadius: "var(--radius-lg)",
-                padding: "20px",
-                marginBottom: "12px",
-              }}
-            >
-              <h3
-                style={{
-                  fontSize: "15px",
-                  fontWeight: 500,
-                  marginBottom: "4px",
-                }}
-              >
-                {student.name}
-              </h3>
-              <p
-                style={{
-                  fontSize: "13px",
-                  color: "var(--text-muted)",
-                }}
-              >
-                {student.email || "No email"}
-              </p>
-            </div>
-          ))}
+        <div
+          style={{
+            backgroundColor: "var(--bg-card)",
+            border: "1px solid var(--border-card)",
+            borderRadius: "var(--radius-lg)",
+            overflow: "hidden",
+          }}
+        >
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ borderBottom: "1px solid var(--border-card)" }}>
+                <th style={{ textAlign: "left", padding: "12px 16px", fontSize: "12px", fontWeight: 500, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px" }}>Course</th>
+                <th style={{ textAlign: "left", padding: "12px 16px", fontSize: "12px", fontWeight: 500, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px" }}>Student</th>
+                <th style={{ textAlign: "left", padding: "12px 16px", fontSize: "12px", fontWeight: 500, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px" }}>Framework</th>
+                <th style={{ textAlign: "left", padding: "12px 16px", fontSize: "12px", fontWeight: 500, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px" }}>Created</th>
+              </tr>
+            </thead>
+            <tbody>
+              {courses.map((c) => (
+                <tr key={c.id} style={{ borderBottom: "1px solid var(--border-card)" }}>
+                  <td style={{ padding: "12px 16px", fontSize: "14px" }}>{c.name}</td>
+                  <td style={{ padding: "12px 16px", fontSize: "14px", color: "var(--text-muted)" }}>{c.students?.name || "—"}</td>
+                  <td style={{ padding: "12px 16px", fontSize: "13px", color: "var(--text-muted)" }}>{c.framework_type || "—"}</td>
+                  <td style={{ padding: "12px 16px", fontSize: "13px", color: "var(--text-muted)" }}>{new Date(c.created_at).toLocaleDateString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
