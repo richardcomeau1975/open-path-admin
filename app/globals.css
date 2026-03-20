@@ -1,15 +1,18 @@
 :root {
-  --bg-page: #1a1a2e;
-  --bg-card: #16213e;
-  --border-card: #2a2a4a;
-  --text-primary: #e0e0e0;
-  --text-muted: #8888aa;
-  --accent: #7c3aed;
-  --success: #4ade80;
-  --warning: #fbbf24;
-  --danger: #f87171;
+  --bg-page: #fdfbf7;
+  --bg-card: #ffffff;
+  --border-card: #E8E4DA;
+  --text-primary: #1a1a1a;
+  --text-muted: #6B6B6B;
+  --accent-gold: #8B6914;
+  --btn-normal: #9B8E82;
+  --btn-hover: #A0785A;
+  --btn-text: #ffffff;
+  --status-green: #4A7C59;
+  --status-amber: #C4972A;
+  --status-red: #c0392b;
   --radius: 8px;
-  --radius-sm: 6px;
+  --radius-lg: 12px;
 }
 
 * {
@@ -26,5 +29,5 @@ body {
 }
 
 h1, h2, h3, h4 {
-  font-family: var(--font-body), "Inter", sans-serif;
+  font-family: var(--font-display), "Lora", serif;
 }
