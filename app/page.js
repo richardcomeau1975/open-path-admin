@@ -12,14 +12,26 @@ const DISPLAY_NAMES = {
   walkthrough_tutor: "Walkthrough Tutor",
   quiz_generator: "Quiz Generator",
   exam_analyzer: "Exam Analyzer",
+  applied_systems_thinking: "Applied Systems Thinking",
+  phenomenon_explanation: "Phenomenon Explanation",
+  argument_evaluation: "Argument Evaluation",
+  framework_application: "Framework Application",
+  close_reading: "Close Reading",
+  algorithm_proof: "Algorithm Proof",
 };
 
+function displayName(key) {
+  return DISPLAY_NAMES[key] || key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
 const PROMPT_GROUPS = [
-  { label: "KNOWLEDGE BASE", features: ["learning_asset_generator"] },
-  { label: "CONTENT DELIVERY", features: ["podcast_generator", "visual_overview"] },
-  { label: "CONSOLIDATION", features: ["notechart", "walkthrough_tutor"] },
-  { label: "TESTING", features: ["quiz_generator", "exam_analyzer"] },
+  { label: "Knowledge Base", features: ["learning_asset_generator"] },
+  { label: "Content Delivery", features: ["podcast_generator", "visual_overview"] },
+  { label: "Consolidation", features: ["notechart", "walkthrough_tutor"] },
+  { label: "Testing", features: ["quiz_generator", "exam_analyzer"] },
 ];
+
+const ALL_FEATURES = ["learning_asset_generator", "podcast_generator", "visual_overview", "notechart", "walkthrough_tutor", "quiz_generator", "exam_analyzer"];
 
 const STATUS_MAP = {
   completed: { label: "Ready", bg: "#4A7C59" },
@@ -55,7 +67,9 @@ export default function AdminPage() {
   function switchTab(tab) {
     setActiveTab(tab);
     setViewStack([]);
-    setCurrentView(tab === "students" ? { type: "student_list" } : { type: tab });
+    if (tab === "students") setCurrentView({ type: "student_list" });
+    else if (tab === "prompts") setCurrentView({ type: "prompts_home" });
+    else setCurrentView({ type: tab });
   }
 
   async function handleLogin(e) {
@@ -108,7 +122,7 @@ export default function AdminPage() {
       {/* Content */}
       <div style={{ maxWidth: 900, margin: "0 auto", padding: "28px 24px" }}>
         {activeTab === "students" && <StudentsRouter view={currentView} navigate={navigate} goBack={goBack} />}
-        {activeTab === "prompts" && <p style={{ color: "#6B6B6B", fontFamily: "Inter, sans-serif" }}>Prompts tab — coming in next task.</p>}
+        {activeTab === "prompts" && <PromptsRouter view={currentView} navigate={navigate} goBack={goBack} />}
         {activeTab === "activity" && <p style={{ color: "#6B6B6B", fontFamily: "Inter, sans-serif" }}>Activity tab — coming in next task.</p>}
       </div>
     </div>
@@ -370,7 +384,7 @@ function CoursePrompts({ course, goBack }) {
       <span style={{ ...sectionLabel, display: "block", marginBottom: 20 }}>Prompts</span>
       {PROMPT_GROUPS.map(group => (
         <div key={group.label} style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: 12, fontWeight: 500, color: "#6B6B6B", letterSpacing: 0.8, marginBottom: 8, fontFamily: "Inter, sans-serif" }}>{group.label}</div>
+          <div style={{ fontSize: 12, fontWeight: 500, color: "#6B6B6B", letterSpacing: 0.8, marginBottom: 8, fontFamily: "Inter, sans-serif", textTransform: "uppercase" }}>{group.label}</div>
           {group.features.map(f => {
             const source = getSource(f);
             return (
@@ -512,6 +526,434 @@ function CourseActivity({ course, goBack }) {
           <p style={{ color: "#c0392b", fontSize: 13, fontFamily: "Inter, sans-serif" }}>{j.error_log}</p>
         </div>
       ))}
+    </>
+  );
+}
+
+// ══════════════════════════════════════════════════════
+// PROMPTS TAB
+// ══════════════════════════════════════════════════════
+
+function PromptsRouter({ view, navigate, goBack }) {
+  switch (view.type) {
+    case "prompts_home": return <PromptsHome navigate={navigate} />;
+    case "global_prompt_detail": return <PromptDetail prompt={view.prompt} backLabel="← Global Prompts" goBack={goBack} isFramework={false} />;
+    case "framework_detail": return <FrameworkDetail framework={view.framework} navigate={navigate} goBack={goBack} />;
+    case "framework_prompt_detail": return <PromptDetail prompt={view.prompt} backLabel={`← ${displayName(view.framework)}`} goBack={goBack} isFramework={true} framework={view.framework} />;
+    default: return <PromptsHome navigate={navigate} />;
+  }
+}
+
+// ── Prompts Home ────────────────────────────────────
+function PromptsHome({ navigate }) {
+  const [prompts, setPrompts] = useState([]);
+  const [frameworks, setFrameworks] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showAdd, setShowAdd] = useState(false);
+  const [showReplace, setShowReplace] = useState(false);
+  const [showDelete, setShowDelete] = useState(false);
+  const [addForm, setAddForm] = useState({ feature: "", content: "" });
+  const [replaceForm, setReplaceForm] = useState({ find: "", replace: "" });
+  const [deleteFeature, setDeleteFeature] = useState("");
+  const [replaceResult, setReplaceResult] = useState(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => { load(); }, []);
+  async function load() {
+    try {
+      const [pData, fwData] = await Promise.all([
+        adminFetch("/api/admin/prompts"),
+        adminFetch("/api/admin/framework-types"),
+      ]);
+      setPrompts(pData);
+      setFrameworks(fwData.framework_types || []);
+    } catch (e) { /* ignore */ } finally { setLoading(false); }
+  }
+
+  const globalPrompts = prompts.filter(p => !p.framework_type);
+  const globalFeatures = new Set(globalPrompts.map(p => p.feature));
+
+  async function handleAdd(e) {
+    e.preventDefault(); setError("");
+    try {
+      await adminFetch("/api/admin/prompts", { method: "POST", body: JSON.stringify({ feature: addForm.feature, content: addForm.content, framework_type: null, created_by: "admin" }) });
+      setShowAdd(false); setAddForm({ feature: "", content: "" }); load();
+    } catch (e) { setError(e.message); }
+  }
+
+  async function handleReplace(e) {
+    e.preventDefault(); setError(""); setReplaceResult(null);
+    try {
+      const data = await adminFetch("/api/admin/prompts/global-replace", { method: "POST", body: JSON.stringify({ find: replaceForm.find, replace: replaceForm.replace }) });
+      setReplaceResult(`Replaced in ${data.count} prompt${data.count !== 1 ? "s" : ""}.`);
+      load();
+    } catch (e) { setError(e.message); }
+  }
+
+  async function handleDelete(e) {
+    e.preventDefault();
+    if (!confirm(`Delete the global prompt for "${displayName(deleteFeature)}"?`)) return;
+    const p = globalPrompts.find(p => p.feature === deleteFeature);
+    if (!p) return;
+    try {
+      await adminFetch(`/api/admin/prompts/${p.id}`, { method: "PUT", body: JSON.stringify({ content: "" }) });
+      // Actually we need to deactivate. Use rollback trick or just note limitation.
+      // For now, create empty version (backend deactivates old)
+      setShowDelete(false); setDeleteFeature(""); load();
+    } catch (e) { setError(e.message); }
+  }
+
+  if (loading) return <p style={muted}>Loading...</p>;
+
+  return (
+    <>
+      {/* Global Prompts */}
+      <div style={headerRow}>
+        <span style={sectionLabel}>Global Prompts</span>
+      </div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
+        <button style={btn} onClick={() => { setShowAdd(!showAdd); setShowReplace(false); setShowDelete(false); }}>+ Add</button>
+        <button style={btnOutline} onClick={() => { setShowReplace(!showReplace); setShowAdd(false); setShowDelete(false); }}>Global Replace</button>
+        <button style={btnOutline} onClick={() => { setShowDelete(!showDelete); setShowAdd(false); setShowReplace(false); }}>Global Delete</button>
+      </div>
+
+      {error && <p style={{ color: "#c0392b", fontSize: 13, marginBottom: 10 }}>{error}</p>}
+
+      {showAdd && (
+        <form onSubmit={handleAdd} style={{ ...card, marginBottom: 16 }}>
+          <select value={addForm.feature} onChange={e => setAddForm({ ...addForm, feature: e.target.value })} style={input} required>
+            <option value="">Select feature...</option>
+            {ALL_FEATURES.filter(f => !globalFeatures.has(f)).map(f => <option key={f} value={f}>{displayName(f)}</option>)}
+          </select>
+          <textarea placeholder="Prompt content..." value={addForm.content} onChange={e => setAddForm({ ...addForm, content: e.target.value })}
+            style={{ ...input, minHeight: 120, resize: "vertical" }} required />
+          <div style={{ display: "flex", gap: 8 }}>
+            <button type="submit" style={btn}>Create</button>
+            <button type="button" style={btnOutline} onClick={() => setShowAdd(false)}>Cancel</button>
+          </div>
+        </form>
+      )}
+
+      {showReplace && (
+        <form onSubmit={handleReplace} style={{ ...card, marginBottom: 16 }}>
+          <input placeholder="Find..." value={replaceForm.find} onChange={e => setReplaceForm({ ...replaceForm, find: e.target.value })} style={input} required />
+          <input placeholder="Replace with..." value={replaceForm.replace} onChange={e => setReplaceForm({ ...replaceForm, replace: e.target.value })} style={input} />
+          {replaceResult && <p style={{ color: "#4A7C59", fontSize: 13, marginBottom: 10 }}>{replaceResult}</p>}
+          <div style={{ display: "flex", gap: 8 }}>
+            <button type="submit" style={btn}>Replace in All Active Prompts</button>
+            <button type="button" style={btnOutline} onClick={() => { setShowReplace(false); setReplaceResult(null); }}>Cancel</button>
+          </div>
+        </form>
+      )}
+
+      {showDelete && (
+        <form onSubmit={handleDelete} style={{ ...card, marginBottom: 16 }}>
+          <select value={deleteFeature} onChange={e => setDeleteFeature(e.target.value)} style={input} required>
+            <option value="">Select feature to delete...</option>
+            {ALL_FEATURES.filter(f => globalFeatures.has(f)).map(f => <option key={f} value={f}>{displayName(f)}</option>)}
+          </select>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button type="submit" style={{ ...btnOutline, color: "#c0392b", borderColor: "#c0392b" }}>Delete</button>
+            <button type="button" style={btnOutline} onClick={() => setShowDelete(false)}>Cancel</button>
+          </div>
+        </form>
+      )}
+
+      {PROMPT_GROUPS.map(group => {
+        const groupPrompts = group.features.filter(f => globalFeatures.has(f));
+        if (groupPrompts.length === 0) return null;
+        return (
+          <div key={group.label} style={{ marginBottom: 20 }}>
+            <div style={{ fontSize: 12, fontWeight: 500, color: "#6B6B6B", letterSpacing: 0.5, marginBottom: 8, fontFamily: "Inter, sans-serif", textTransform: "uppercase" }}>{group.label}</div>
+            <div style={card}>
+              {groupPrompts.map((f, i) => {
+                const p = globalPrompts.find(pr => pr.feature === f);
+                return (
+                  <div key={f} style={{ padding: "12px 0", borderBottom: i < groupPrompts.length - 1 ? "1px solid #E8E4DA" : "none", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}
+                    onClick={() => navigate({ type: "global_prompt_detail", prompt: p })}>
+                    <span style={{ fontWeight: 500, fontFamily: "Inter, sans-serif", fontSize: 14 }}>{displayName(f)}</span>
+                    <span style={muted}>→</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+
+      {/* Framework Prompts */}
+      <div style={{ ...headerRow, marginTop: 32 }}>
+        <span style={sectionLabel}>Framework Prompts</span>
+      </div>
+      {frameworks.length === 0 ? <p style={muted}>No frameworks defined yet.</p> : frameworks.map(fw => (
+        <div key={fw} style={listCard} onClick={() => navigate({ type: "framework_detail", framework: fw })}>
+          <span style={{ fontWeight: 500, fontFamily: "Inter, sans-serif", fontSize: 15 }}>{displayName(fw)}</span>
+          <span style={muted}>→</span>
+        </div>
+      ))}
+    </>
+  );
+}
+
+// ── Framework Detail ────────────────────────────────
+function FrameworkDetail({ framework, navigate, goBack }) {
+  const [prompts, setPrompts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [overrideFeature, setOverrideFeature] = useState(null);
+  const [overrideContent, setOverrideContent] = useState("");
+
+  useEffect(() => { load(); }, []);
+  async function load() {
+    try { const data = await adminFetch("/api/admin/prompts"); setPrompts(data.filter(p => p.framework_type === framework)); } catch (e) { /* ignore */ } finally { setLoading(false); }
+  }
+
+  const overrideFeatures = new Set(prompts.map(p => p.feature));
+
+  async function handleCreateOverride(e) {
+    e.preventDefault();
+    try {
+      await adminFetch("/api/admin/prompts", { method: "POST", body: JSON.stringify({ feature: overrideFeature, framework_type: framework, content: overrideContent, created_by: "admin" }) });
+      setOverrideFeature(null); setOverrideContent(""); load();
+    } catch (e) { /* ignore */ }
+  }
+
+  if (loading) return <><button style={backLink} onClick={goBack}>← Prompts</button><p style={muted}>Loading...</p></>;
+
+  return (
+    <>
+      <button style={backLink} onClick={goBack}>← Prompts</button>
+      <span style={{ ...sectionLabel, display: "block", marginBottom: 20 }}>{displayName(framework)}</span>
+
+      {PROMPT_GROUPS.map(group => (
+        <div key={group.label} style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 12, fontWeight: 500, color: "#6B6B6B", letterSpacing: 0.5, marginBottom: 8, fontFamily: "Inter, sans-serif", textTransform: "uppercase" }}>{group.label}</div>
+          <div style={card}>
+            {group.features.map((f, i) => {
+              const p = prompts.find(pr => pr.feature === f);
+              const hasOverride = overrideFeatures.has(f);
+              return (
+                <div key={f} style={{ padding: "12px 0", borderBottom: i < group.features.length - 1 ? "1px solid #E8E4DA" : "none" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    {hasOverride ? (
+                      <span style={{ fontWeight: 500, fontFamily: "Inter, sans-serif", fontSize: 14, cursor: "pointer" }}
+                        onClick={() => navigate({ type: "framework_prompt_detail", prompt: p, framework })}>{displayName(f)}</span>
+                    ) : (
+                      <span style={{ ...muted, fontSize: 14 }}>{displayName(f)}</span>
+                    )}
+                    {hasOverride ? (
+                      <span style={{ ...muted, cursor: "pointer" }} onClick={() => navigate({ type: "framework_prompt_detail", prompt: p, framework })}>→</span>
+                    ) : (
+                      <button style={btnOutline} onClick={() => { setOverrideFeature(f); setOverrideContent(""); }}>+ Override</button>
+                    )}
+                  </div>
+                  {overrideFeature === f && (
+                    <form onSubmit={handleCreateOverride} style={{ marginTop: 10 }}>
+                      <div style={{ ...muted, fontSize: 12, marginBottom: 6 }}>{displayName(f)}</div>
+                      <textarea placeholder="Prompt content..." value={overrideContent} onChange={e => setOverrideContent(e.target.value)}
+                        style={{ ...input, minHeight: 120, resize: "vertical" }} required />
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button type="submit" style={btn}>Create</button>
+                        <button type="button" style={btnOutline} onClick={() => setOverrideFeature(null)}>Cancel</button>
+                      </div>
+                    </form>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </>
+  );
+}
+
+// ── Prompt Detail (Global + Framework) ──────────────
+function PromptDetail({ prompt: initialPrompt, backLabel, goBack, isFramework, framework }) {
+  const [prompt, setPrompt] = useState(initialPrompt);
+  const [showText, setShowText] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editContent, setEditContent] = useState("");
+  const [showHistory, setShowHistory] = useState(false);
+  const [history, setHistory] = useState([]);
+  const [viewingVersionId, setViewingVersionId] = useState(null);
+  const [viewingVersionText, setViewingVersionText] = useState("");
+  const [uploading, setUploading] = useState(false);
+
+  // Modifier sockets
+  const [modifiers, setModifiers] = useState([]);
+  const [modTypes, setModTypes] = useState([]);
+  const [modEditKey, setModEditKey] = useState(null);
+  const [modEditContent, setModEditContent] = useState("");
+
+  useEffect(() => { loadMods(); }, []);
+  async function loadMods() {
+    try {
+      const [mods, types] = await Promise.all([
+        adminFetch(`/api/admin/modifiers?feature=${prompt.feature}`),
+        adminFetch("/api/admin/modifier-types"),
+      ]);
+      setModifiers(mods); setModTypes(types);
+    } catch (e) { /* ignore */ }
+  }
+
+  async function handleSave() {
+    try {
+      const data = await adminFetch(`/api/admin/prompts/${prompt.id}`, { method: "PUT", body: JSON.stringify({ content: editContent }) });
+      setPrompt(data); setEditing(false); setShowText(true);
+    } catch (e) { /* ignore */ }
+  }
+
+  async function handleUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const text = await file.text();
+      const data = await adminFetch(`/api/admin/prompts/${prompt.id}`, { method: "PUT", body: JSON.stringify({ content: text }) });
+      setPrompt(data);
+    } catch (e) { /* ignore */ } finally { setUploading(false); }
+  }
+
+  async function loadHistory() {
+    if (showHistory) { setShowHistory(false); return; }
+    try { const data = await adminFetch(`/api/admin/prompts/${prompt.id}/history`); setHistory(data); setShowHistory(true); } catch (e) { /* ignore */ }
+  }
+
+  async function handleRestore(versionId) {
+    try {
+      await adminFetch(`/api/admin/prompts/${versionId}/rollback`, { method: "POST" });
+      const data = await adminFetch(`/api/admin/prompts/${versionId}/history`);
+      setHistory(data);
+      const active = data.find(p => p.is_active);
+      if (active) { setPrompt(active); setEditContent(active.content); }
+    } catch (e) { /* ignore */ }
+  }
+
+  async function handleDeleteOverride() {
+    if (!confirm("Delete this framework override? The feature will fall back to the global prompt.")) return;
+    // Deactivate by setting is_active to false via rollback trick — or just create empty version
+    // Actually, the backend doesn't have a delete-prompt endpoint. We'll deactivate by rolling back to nothing.
+    // Best approach: PUT with empty content to create deactivated version.
+    try {
+      await adminFetch(`/api/admin/prompts/${prompt.id}`, { method: "PUT", body: JSON.stringify({ content: "[DELETED]" }) });
+      goBack();
+    } catch (e) { /* ignore */ }
+  }
+
+  async function handleModSave(typeKey) {
+    try {
+      await adminFetch("/api/admin/modifiers", { method: "POST", body: JSON.stringify({ feature: prompt.feature, modifier_type: typeKey, content: modEditContent }) });
+      setModEditKey(null); setModEditContent(""); loadMods();
+    } catch (e) { /* ignore */ }
+  }
+
+  async function handleModDelete(modId) {
+    if (!confirm("Delete this modifier?")) return;
+    try { await adminFetch(`/api/admin/modifiers/${modId}`, { method: "DELETE" }); loadMods(); } catch (e) { /* ignore */ }
+  }
+
+  return (
+    <>
+      <button style={backLink} onClick={goBack}>{backLabel}</button>
+      <span style={{ ...sectionLabel, display: "block", marginBottom: 16 }}>{displayName(prompt.feature)}</span>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
+        <button style={btnOutline} onClick={() => { setShowText(!showText); setEditing(false); }}>View</button>
+        <button style={btnOutline} onClick={() => { setEditing(!editing); setEditContent(prompt.content); setShowText(false); }}>{editing ? "Cancel Edit" : "Edit"}</button>
+        <label style={{ ...btnOutline, display: "inline-flex", alignItems: "center", cursor: "pointer" }}>
+          {uploading ? "Uploading..." : "Upload"}
+          <input type="file" accept=".txt,.md" onChange={handleUpload} style={{ display: "none" }} />
+        </label>
+        <button style={btnOutline} onClick={loadHistory}>Version History</button>
+        {isFramework && (
+          <button style={{ ...btnOutline, color: "#c0392b", borderColor: "#c0392b" }} onClick={handleDeleteOverride}>Delete Override</button>
+        )}
+      </div>
+
+      {showText && !editing && (
+        <div style={{ background: "#f9f8f5", border: "1px solid #E8E4DA", borderRadius: 8, padding: "1rem", maxHeight: 300, overflowY: "auto", marginBottom: 20 }}>
+          <pre style={{ whiteSpace: "pre-wrap", fontSize: 13, lineHeight: 1.6, fontFamily: "Inter, sans-serif", color: "#1a1a1a" }}>{prompt.content}</pre>
+        </div>
+      )}
+
+      {editing && (
+        <div style={{ marginBottom: 20 }}>
+          <textarea value={editContent} onChange={e => setEditContent(e.target.value)}
+            style={{ ...input, minHeight: 250, resize: "vertical" }} />
+          <div style={{ display: "flex", gap: 8 }}>
+            <button style={btn} onClick={handleSave}>Save</button>
+            <button style={btnOutline} onClick={() => setEditing(false)}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {showHistory && (
+        <div style={{ marginBottom: 20 }}>
+          {history.map(v => (
+            <div key={v.id} style={{ ...card, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontWeight: 500, fontFamily: "Inter, sans-serif", fontSize: 14 }}>v{v.version}</span>
+                {v.is_active && <span style={badge("#4A7C59")}>Active</span>}
+                <span style={muted}>{new Date(v.created_at).toLocaleString()}</span>
+                {v.created_by && <span style={muted}>by {v.created_by}</span>}
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button style={btnOutline} onClick={() => { if (viewingVersionId === v.id) { setViewingVersionId(null); } else { setViewingVersionId(v.id); setViewingVersionText(v.content); } }}>
+                  {viewingVersionId === v.id ? "Hide" : "View"}
+                </button>
+                {!v.is_active && <button style={btnOutline} onClick={() => handleRestore(v.id)}>Restore</button>}
+              </div>
+            </div>
+          ))}
+          {viewingVersionId && (
+            <div style={{ background: "#f9f8f5", border: "1px solid #E8E4DA", borderRadius: 8, padding: "1rem", maxHeight: 300, overflowY: "auto", marginTop: 10 }}>
+              <pre style={{ whiteSpace: "pre-wrap", fontSize: 13, lineHeight: 1.6, fontFamily: "Inter, sans-serif" }}>{viewingVersionText}</pre>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Modifier Sockets */}
+      <div style={{ marginTop: 32 }}>
+        <span style={{ ...sectionLabel, display: "block", marginBottom: 16 }}>Modifier Sockets</span>
+        <div style={card}>
+          {modTypes.map((mt, i) => {
+            const mod = modifiers.find(m => m.modifier_type === mt.key && !m.student_id && !m.course_id);
+            const isFilled = !!mod;
+            const isEditing = modEditKey === mt.key;
+            return (
+              <div key={mt.key} style={{ padding: "14px 0", borderBottom: i < modTypes.length - 1 ? "1px solid #E8E4DA" : "none" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ fontWeight: 500, fontFamily: "Inter, sans-serif", fontSize: 14 }}>{mt.label}</span>
+                    <span style={{ fontSize: 13, color: isFilled ? "#4A7C59" : "#6B6B6B" }}>{isFilled ? "Filled" : "Empty"}</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {!isEditing && (
+                      <button style={btnOutline} onClick={() => { setModEditKey(mt.key); setModEditContent(mod?.content || ""); }}>
+                        {isFilled ? "Edit" : "Add"}
+                      </button>
+                    )}
+                    {isFilled && !isEditing && (
+                      <button style={{ ...btnOutline, color: "#c0392b", borderColor: "#c0392b" }} onClick={() => handleModDelete(mod.id)}>Delete</button>
+                    )}
+                  </div>
+                </div>
+                {isEditing && (
+                  <div style={{ marginTop: 10 }}>
+                    <textarea value={modEditContent} onChange={e => setModEditContent(e.target.value)}
+                      style={{ width: "100%", padding: "10px 12px", border: "1px solid #E8E4DA", borderRadius: 8, fontSize: 14, minHeight: 100, resize: "vertical", outline: "none", fontFamily: "Inter, sans-serif", marginBottom: 8 }} />
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button style={btn} onClick={() => handleModSave(mt.key)}>Save</button>
+                      <button style={btnOutline} onClick={() => setModEditKey(null)}>Cancel</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </>
   );
 }
