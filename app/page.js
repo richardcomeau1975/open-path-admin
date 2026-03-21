@@ -596,9 +596,7 @@ function PromptsHome({ navigate }) {
     const p = globalPrompts.find(p => p.feature === deleteFeature);
     if (!p) return;
     try {
-      await adminFetch(`/api/admin/prompts/${p.id}`, { method: "PUT", body: JSON.stringify({ content: "" }) });
-      // Actually we need to deactivate. Use rollback trick or just note limitation.
-      // For now, create empty version (backend deactivates old)
+      await adminFetch(`/api/admin/prompts/${p.id}`, { method: "PUT", body: JSON.stringify({ is_active: false }) });
       setShowDelete(false); setDeleteFeature(""); load();
     } catch (e) { setError(e.message); }
   }
@@ -831,11 +829,8 @@ function PromptDetail({ prompt: initialPrompt, backLabel, goBack, isFramework, f
 
   async function handleDeleteOverride() {
     if (!confirm("Delete this framework override? The feature will fall back to the global prompt.")) return;
-    // Deactivate by setting is_active to false via rollback trick — or just create empty version
-    // Actually, the backend doesn't have a delete-prompt endpoint. We'll deactivate by rolling back to nothing.
-    // Best approach: PUT with empty content to create deactivated version.
     try {
-      await adminFetch(`/api/admin/prompts/${prompt.id}`, { method: "PUT", body: JSON.stringify({ content: "[DELETED]" }) });
+      await adminFetch(`/api/admin/prompts/${prompt.id}`, { method: "PUT", body: JSON.stringify({ is_active: false }) });
       goBack();
     } catch (e) { /* ignore */ }
   }
