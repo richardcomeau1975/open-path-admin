@@ -244,7 +244,7 @@ function StudentCourses({ student, navigate, goBack }) {
           <input placeholder="Course name *" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} style={input} required />
           <select value={form.framework_type} onChange={e => setForm({ ...form, framework_type: e.target.value })} style={input}>
             <option value="">None</option>
-            {frameworks.map(f => <option key={f} value={f}>{f}</option>)}
+            {frameworks.map(f => <option key={f} value={f}>{displayName(f)}</option>)}
           </select>
           {error && <p style={{ color: "#c0392b", fontSize: 13, marginBottom: 10 }}>{error}</p>}
           <div style={{ display: "flex", gap: 8 }}>
@@ -293,7 +293,7 @@ function CourseDetail({ student, course: initialCourse, navigate, goBack }) {
         <label style={{ ...muted, fontSize: 12, textTransform: "uppercase", letterSpacing: 0.5, display: "block", marginBottom: 6 }}>Framework Type</label>
         <select value={fw} onChange={handleFwChange} style={{ ...input, marginBottom: 0 }}>
           <option value="">None</option>
-          {frameworks.map(f => <option key={f} value={f}>{f}</option>)}
+          {frameworks.map(f => <option key={f} value={f}>{displayName(f)}</option>)}
         </select>
       </div>
 
