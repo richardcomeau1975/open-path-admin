@@ -123,7 +123,7 @@ export default function AdminPage() {
       <div style={{ maxWidth: 900, margin: "0 auto", padding: "28px 24px" }}>
         {activeTab === "students" && <StudentsRouter view={currentView} navigate={navigate} goBack={goBack} />}
         {activeTab === "prompts" && <PromptsRouter view={currentView} navigate={navigate} goBack={goBack} />}
-        {activeTab === "activity" && <p style={{ color: "#6B6B6B", fontFamily: "Inter, sans-serif" }}>Activity tab — coming in next task.</p>}
+        {activeTab === "activity" && <ActivityTab />}
       </div>
     </div>
   );
@@ -952,6 +952,129 @@ function PromptDetail({ prompt: initialPrompt, backLabel, goBack, isFramework, f
               </div>
             );
           })}
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ── Activity Tab ────────────────────────────────────
+function ActivityTab() {
+  const [jobs, setJobs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [rerunning, setRerunning] = useState({});
+
+  const fetchJobs = async () => {
+    try {
+      const data = await adminFetch("/api/admin/batch-jobs");
+      setJobs(data);
+    } catch (e) {
+      console.error("Failed to fetch batch jobs", e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchJobs();
+    const interval = setInterval(fetchJobs, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const completedCount = jobs.filter(j => j.status === "completed").length;
+  const runningCount = jobs.filter(j => ["pending", "generating", "running"].includes(j.status)).length;
+  const errorCount = jobs.filter(j => j.status === "failed").length;
+  const failedJobs = jobs.filter(j => j.status === "failed");
+
+  const handleRerun = async (topicId) => {
+    setRerunning(prev => ({ ...prev, [topicId]: true }));
+    try {
+      await adminFetch(`/api/admin/topics/${topicId}/rerun`, { method: "POST" });
+      await fetchJobs();
+    } catch (e) {
+      console.error("Rerun failed", e);
+    } finally {
+      setRerunning(prev => ({ ...prev, [topicId]: false }));
+    }
+  };
+
+  const sectionLabel = { fontFamily: "Lora, serif", fontSize: 18, fontWeight: 500, color: "#8B6914" };
+  const card = { background: "#ffffff", border: "1px solid #E8E4DA", borderRadius: 12, padding: 20 };
+
+  if (loading) return <p style={{ color: "#6B6B6B", fontFamily: "Inter, sans-serif" }}>Loading...</p>;
+
+  return (
+    <>
+      {/* Stat Cards */}
+      <div style={{ display: "flex", gap: 16, marginBottom: 28 }}>
+        {[
+          { count: completedCount, label: "Completed", color: "#4A7C59" },
+          { count: runningCount, label: "Running", color: "#C4972A" },
+          { count: errorCount, label: "Errors", color: "#c0392b" },
+        ].map(({ count, label, color }) => (
+          <div key={label} style={{ ...card, flex: 1, textAlign: "center", padding: "20px 16px" }}>
+            <div style={{ fontFamily: "Lora, serif", fontSize: 20, fontWeight: 500, color }}>{count}</div>
+            <div style={{ fontFamily: "Inter, sans-serif", fontSize: 12, color: "#6B6B6B", marginTop: 4 }}>{label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Errors Section */}
+      <div style={{ marginBottom: 28 }}>
+        <span style={{ ...sectionLabel, display: "block", marginBottom: 12 }}>Errors</span>
+        <div style={card}>
+          {failedJobs.length === 0 ? (
+            <p style={{ color: "#6B6B6B", fontFamily: "Inter, sans-serif", fontSize: 13, margin: 0 }}>No errors.</p>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              {failedJobs.map((job) => {
+                const topicName = job.topics?.name || job.topic_id;
+                const courseName = job.course_name || job.topics?.course_id || "—";
+                const studentName = job.student_name || job.student_id || "—";
+                const time = job.updated_at || job.created_at;
+                const timeStr = time ? new Date(time).toLocaleString() : "";
+                return (
+                  <div key={job.id} style={{ borderBottom: "1px solid #E8E4DA", paddingBottom: 14 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontFamily: "Inter, sans-serif", fontWeight: 600, fontSize: 15 }}>{topicName}</span>
+                      <span style={{ background: "#c0392b", color: "#fff", fontSize: 11, fontFamily: "Inter, sans-serif", padding: "2px 10px", borderRadius: 999, fontWeight: 500 }}>Failed</span>
+                    </div>
+                    <div style={{ fontFamily: "Inter, sans-serif", fontSize: 12, color: "#6B6B6B", marginTop: 4 }}>
+                      {studentName} · {courseName} · {timeStr}
+                    </div>
+                    {job.error && (
+                      <div style={{ fontFamily: "Inter, sans-serif", fontSize: 12, color: "#c0392b", marginTop: 4 }}>{job.error}</div>
+                    )}
+                    <button
+                      onClick={() => handleRerun(job.topic_id)}
+                      disabled={rerunning[job.topic_id]}
+                      style={{
+                        marginTop: 8, background: "#9B8E82", color: "#fff", border: "none", borderRadius: 6,
+                        padding: "6px 16px", fontFamily: "Inter, sans-serif", fontSize: 12, fontWeight: 500,
+                        cursor: rerunning[job.topic_id] ? "not-allowed" : "pointer", opacity: rerunning[job.topic_id] ? 0.6 : 1,
+                      }}
+                    >
+                      {rerunning[job.topic_id] ? "Re-running..." : "Re-run"}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* API Usage Section */}
+      <div style={{ marginBottom: 28 }}>
+        <span style={{ ...sectionLabel, display: "block", marginBottom: 12 }}>API Usage</span>
+        <div style={card}>
+          <p style={{ fontFamily: "Inter, sans-serif", fontSize: 13, color: "#6B6B6B", margin: 0 }}>
+            Check{" "}
+            <a href="https://console.anthropic.com" target="_blank" rel="noopener noreferrer" style={{ color: "#8B6914", textDecoration: "none" }}>Anthropic</a>,{" "}
+            <a href="https://platform.openai.com/usage" target="_blank" rel="noopener noreferrer" style={{ color: "#8B6914", textDecoration: "none" }}>OpenAI</a>, and{" "}
+            <a href="https://console.cloud.google.com/billing" target="_blank" rel="noopener noreferrer" style={{ color: "#8B6914", textDecoration: "none" }}>Google Cloud</a>{" "}
+            dashboards.
+          </p>
         </div>
       </div>
     </>
