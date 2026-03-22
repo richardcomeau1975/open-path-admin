@@ -8,7 +8,7 @@ const DISPLAY_NAMES = {
   learning_asset_generator: "Learning Asset Generator",
   podcast_generator: "Podcast Generator",
   visual_overview: "Visual Overview",
-  notechart: "Notechart",
+  notechart: "Active Recall",
   walkthrough_tutor: "Walkthrough Tutor",
   quiz_generator: "Quiz Generator",
   exam_analyzer: "Exam Analyzer",
