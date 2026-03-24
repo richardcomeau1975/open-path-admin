@@ -169,6 +169,11 @@ export default function TestEnvironment() {
           </div>
           <div style={{ display: "flex", gap: 6 }}>
             {exists && <button style={S.btnOut} onClick={function() { downloadOutput(key); }}>View</button>}
+            {exists && <button style={S.btnOut} onClick={function() {
+              api("/api/admin/test/topics/" + topicId + "/outputs/" + key, { method: "DELETE" })
+                .then(function() { log("Cleared " + key); selectTopic(topicId); })
+                .catch(function(e) { setError("Clear: " + e.message); });
+            }}>Clear</button>}
             <label style={Object.assign({}, S.btnSm, { display: "inline-flex", alignItems: "center", cursor: "pointer" })}>
               Replace
               <input type="file" accept={props.accept} multiple={props.multi}
