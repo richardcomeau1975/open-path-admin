@@ -105,7 +105,10 @@ export default function AdminPage() {
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 32px", borderBottom: "1px solid #E8E4DA" }}>
         <span style={{ fontFamily: "Lora, serif", fontSize: 22, fontWeight: 600, color: "#1a1a1a" }}>Open Path Admin</span>
-        <button onClick={handleLogout} style={{ background: "none", border: "none", color: "#6B6B6B", cursor: "pointer", fontSize: 14, fontFamily: "Inter, sans-serif" }}>Log out</button>
+        <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+          <a href="/test" style={{ fontSize: 13, color: "#9B8E82", textDecoration: "none", fontFamily: "Inter, sans-serif" }}>Test Environment</a>
+          <button onClick={handleLogout} style={{ background: "none", border: "none", color: "#6B6B6B", cursor: "pointer", fontSize: 14, fontFamily: "Inter, sans-serif" }}>Log out</button>
+        </div>
       </div>
 
       {/* Tabs */}
