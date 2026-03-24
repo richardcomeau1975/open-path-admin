@@ -135,7 +135,8 @@ function StudentsRouter({ view, navigate, goBack }) {
     case "student_list": return <StudentList navigate={navigate} />;
     case "student_courses": return <StudentCourses student={view.student} navigate={navigate} goBack={goBack} />;
     case "course_detail": return <CourseDetail student={view.student} course={view.course} navigate={navigate} goBack={goBack} />;
-    case "course_topics": return <CourseTopics course={view.course} goBack={goBack} />;
+    case "course_topics": return <CourseTopics course={view.course} navigate={navigate} goBack={goBack} />;
+    case "topic_test": return <TopicTestEnvironment topicId={view.topicId} goBack={goBack} />;
     case "course_prompts": return <CoursePrompts course={view.course} goBack={goBack} />;
     case "course_modifiers": return <CourseModifiers student={view.student} course={view.course} goBack={goBack} />;
     case "course_activity": return <CourseActivity course={view.course} goBack={goBack} />;
@@ -316,7 +317,7 @@ function CourseDetail({ student, course: initialCourse, navigate, goBack }) {
 }
 
 // ── Course Topics ───────────────────────────────────
-function CourseTopics({ course, goBack }) {
+function CourseTopics({ course, navigate, goBack }) {
   const [topics, setTopics] = useState([]);
   const [loading, setLoading] = useState(true);
   const [rerunning, setRerunning] = useState(null);
@@ -344,11 +345,16 @@ function CourseTopics({ course, goBack }) {
               <span style={{ fontWeight: 500, fontFamily: "Inter, sans-serif", fontSize: 15 }}>{t.name}</span>
               {status ? <span style={badge(status.bg)}>{status.label}</span> : <span style={badge("#aaa")}>None</span>}
             </div>
-            {showRerun && (
-              <button style={btnOutline} onClick={() => handleRerun(t.id)} disabled={rerunning === t.id}>
-                {rerunning === t.id ? "Starting..." : "Re-run"}
-              </button>
-            )}
+            <div style={{ display: "flex", gap: 6 }}>
+              {showRerun && (
+                <button style={btnOutline} onClick={() => handleRerun(t.id)} disabled={rerunning === t.id}>
+                  {rerunning === t.id ? "Starting..." : "Re-run"}
+                </button>
+              )}
+              {t.generation_status === "completed" && (
+                <button style={btnOutline} onClick={() => navigate({ type: "topic_test", topicId: t.id })}>Test</button>
+              )}
+            </div>
           </div>
         );
       })}
@@ -1072,6 +1078,211 @@ function ActivityTab() {
           </p>
         </div>
       </div>
+    </>
+  );
+}
+
+// ── Topic Test Environment ─────────────────────────
+function TopicTestEnvironment({ topicId, goBack }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(null);
+  const [replacing, setReplacing] = useState(null);
+  const [downstreamRunning, setDownstreamRunning] = useState(false);
+  const [downstreamResult, setDownstreamResult] = useState(null);
+
+  useEffect(() => { load(); }, []);
+  async function load() {
+    try { const d = await adminFetch(`/api/admin/topics/${topicId}/outputs`); setData(d); } catch (e) { /* ignore */ } finally { setLoading(false); }
+  }
+
+  async function handleGenerate(outputType) {
+    setGenerating(outputType);
+    try {
+      await adminFetch(`/api/admin/topics/${topicId}/generate/${outputType}`, { method: "POST" });
+      await load();
+    } catch (e) { alert(`Generate failed: ${e.message}`); }
+    setGenerating(null);
+  }
+
+  async function handleReplace(outputType, file) {
+    setReplacing(outputType);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const token = (await import("../lib/api")).getToken();
+      const API = process.env.NEXT_PUBLIC_API_URL || "";
+      const res = await fetch(`${API}/api/admin/topics/${topicId}/outputs/${outputType}`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      if (!res.ok) { const err = await res.json(); throw new Error(err.detail || "Upload failed"); }
+      await load();
+    } catch (e) { alert(`Replace failed: ${e.message}`); }
+    setReplacing(null);
+  }
+
+  async function handleReplaceImages(files) {
+    setReplacing("visual_overview_images");
+    try {
+      const formData = new FormData();
+      for (const f of files) formData.append("files", f);
+      const token = (await import("../lib/api")).getToken();
+      const API = process.env.NEXT_PUBLIC_API_URL || "";
+      const res = await fetch(`${API}/api/admin/topics/${topicId}/outputs/visual_overview_images/multi`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      if (!res.ok) { const err = await res.json(); throw new Error(err.detail || "Upload failed"); }
+      await load();
+    } catch (e) { alert(`Replace images failed: ${e.message}`); }
+    setReplacing(null);
+  }
+
+  async function handleGenerateDownstream() {
+    setDownstreamRunning(true);
+    setDownstreamResult(null);
+    try {
+      const result = await adminFetch(`/api/admin/topics/${topicId}/generate-downstream`, { method: "POST" });
+      setDownstreamResult(result);
+      await load();
+    } catch (e) { alert(`Downstream generation failed: ${e.message}`); }
+    setDownstreamRunning(false);
+  }
+
+  if (loading) return <p style={muted}>Loading...</p>;
+  if (!data) return <p style={muted}>Failed to load topic.</p>;
+
+  const { topic, student_name, course_name, outputs } = data;
+
+  const ACCEPT_MAP = {
+    learning_asset: ".txt,.md,.yaml",
+    podcast_script: ".txt,.md",
+    podcast_audio: ".mp3,.wav",
+    notechart: ".txt,.md,.json",
+    visual_overview_script: ".txt,.md,.json",
+    visual_overview_audio: ".mp3,.wav",
+  };
+
+  // Dependency info for display
+  const DEPS = {
+    learning_asset: "Source files",
+    podcast_script: "Learning Asset",
+    podcast_audio: "Podcast Script",
+    notechart: "Learning Asset",
+    visual_overview_script: "Learning Asset",
+    visual_overview_images: "Visual Overview Script",
+    visual_overview_audio: "Visual Overview Script",
+  };
+
+  return (
+    <>
+      <button style={backLink} onClick={goBack}>← Topics</button>
+      <div style={{ marginBottom: 20 }}>
+        <span style={{ ...sectionLabel, display: "block", marginBottom: 4 }}>Test Environment</span>
+        <div style={{ fontFamily: "Inter, sans-serif", fontSize: 13, color: "#6B6B6B" }}>
+          {student_name} · {course_name} · {topic.name}
+        </div>
+      </div>
+
+      {/* Pipeline dependency tree visual */}
+      <div style={{ ...card, padding: "1rem", marginBottom: 20 }}>
+        <div style={{ fontFamily: "Inter, sans-serif", fontSize: 12, color: "#6B6B6B", marginBottom: 8 }}>PIPELINE FLOW</div>
+        <div style={{ fontFamily: "monospace", fontSize: 12, color: "#1a1a1a", whiteSpace: "pre", lineHeight: 1.6 }}>
+{`Source Files
+  └─ Learning Asset
+       ├─ Podcast Script → Podcast Audio
+       ├─ Active Recall
+       └─ Visual Overview Script
+            ├─ Images
+            └─ Audio`}
+        </div>
+      </div>
+
+      {/* Output cards */}
+      {outputs.map(o => (
+        <div key={o.key} style={{ ...card, marginBottom: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <div>
+              <span style={{ fontWeight: 500, fontFamily: "Inter, sans-serif", fontSize: 15 }}>{o.label}</span>
+              <span style={{ fontSize: 11, color: "#6B6B6B", marginLeft: 8 }}>← {DEPS[o.key]}</span>
+            </div>
+            <span style={badge(o.exists ? "#4A7C59" : "#aaa")}>{o.exists ? "Exists" : "Not generated"}</span>
+          </div>
+
+          {/* Info line */}
+          {o.exists && o.count != null && (
+            <div style={{ fontSize: 12, color: "#6B6B6B", marginBottom: 8 }}>{o.count} file(s)</div>
+          )}
+
+          {/* View/download link */}
+          {o.exists && o.url && (
+            <a href={o.url} target="_blank" rel="noopener noreferrer"
+              style={{ fontSize: 12, color: "#8B6914", textDecoration: "underline", marginBottom: 8, display: "inline-block" }}>
+              View / Download
+            </a>
+          )}
+          {o.exists && o.urls && (
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+              {o.urls.map((u, i) => (
+                <a key={i} href={u} target="_blank" rel="noopener noreferrer"
+                  style={{ fontSize: 12, color: "#8B6914", textDecoration: "underline" }}>
+                  {o.key === "visual_overview_images" ? `Slide ${i + 1}` : `Segment ${i + 1}`}
+                </a>
+              ))}
+            </div>
+          )}
+
+          {/* Action buttons */}
+          <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+            {/* Generate button */}
+            <button style={btnOutline} onClick={() => handleGenerate(o.key)} disabled={generating === o.key}>
+              {generating === o.key ? "Generating..." : "Generate"}
+            </button>
+
+            {/* Replace button (file input) */}
+            {o.key !== "visual_overview_images" ? (
+              <label style={{ ...btnOutline, display: "inline-flex", alignItems: "center", cursor: replacing === o.key ? "not-allowed" : "pointer" }}>
+                {replacing === o.key ? "Uploading..." : "Replace"}
+                <input type="file" accept={ACCEPT_MAP[o.key] || "*"} style={{ display: "none" }}
+                  onChange={e => { if (e.target.files[0]) handleReplace(o.key, e.target.files[0]); e.target.value = ""; }} />
+              </label>
+            ) : (
+              <label style={{ ...btnOutline, display: "inline-flex", alignItems: "center", cursor: replacing === o.key ? "not-allowed" : "pointer" }}>
+                {replacing === o.key ? "Uploading..." : "Replace Images"}
+                <input type="file" accept=".png,.jpg,.jpeg,.webp" multiple style={{ display: "none" }}
+                  onChange={e => { if (e.target.files.length) handleReplaceImages(e.target.files); e.target.value = ""; }} />
+              </label>
+            )}
+
+            {/* Generate all downstream (only on learning_asset) */}
+            {o.key === "learning_asset" && o.exists && (
+              <button style={{ ...btn, fontSize: 12, padding: "5px 12px" }} onClick={handleGenerateDownstream} disabled={downstreamRunning}>
+                {downstreamRunning ? "Generating downstream..." : "Generate All Downstream"}
+              </button>
+            )}
+          </div>
+        </div>
+      ))}
+
+      {/* Downstream result */}
+      {downstreamResult && (
+        <div style={{ ...card, marginTop: 12 }}>
+          <div style={{ fontWeight: 500, fontSize: 14, marginBottom: 8 }}>Downstream Result</div>
+          {downstreamResult.generated.length > 0 && (
+            <div style={{ fontSize: 13, color: "#4A7C59", marginBottom: 4 }}>
+              Generated: {downstreamResult.generated.join(", ")}
+            </div>
+          )}
+          {downstreamResult.errors.length > 0 && (
+            <div style={{ fontSize: 13, color: "#c0392b" }}>
+              Errors: {downstreamResult.errors.join("; ")}
+            </div>
+          )}
+        </div>
+      )}
     </>
   );
 }
